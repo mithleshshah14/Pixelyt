@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -7,10 +8,32 @@ import 'package:flutter/services.dart';
 class PickerChannel {
   static const MethodChannel _channel = MethodChannel('removetrack/picker');
 
+  static final StreamController<String?> _actionController =
+      StreamController<String?>.broadcast();
+  static bool _handlerInstalled = false;
+
+  /// Fires whenever this already-running app receives a new picker intent
+  /// (e.g. another app asks the system chooser to pick a photo while
+  /// Pixelyt is warm in the background). Android delivers that as
+  /// onNewIntent rather than a fresh launch, so a one-time startup check
+  /// alone would miss it.
+  static Stream<String?> get onLaunchAction => _actionController.stream;
+
+  static void _ensureHandler() {
+    if (_handlerInstalled || !Platform.isAndroid) return;
+    _handlerInstalled = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onNewIntent') {
+        _actionController.add(call.arguments as String?);
+      }
+    });
+  }
+
   /// Returns the intent action this app was launched with (Android only),
   /// or null on other platforms / a normal launcher start.
   static Future<String?> getLaunchAction() async {
     if (!Platform.isAndroid) return null;
+    _ensureHandler();
     try {
       return await _channel.invokeMethod<String>('getLaunchAction');
     } on PlatformException {

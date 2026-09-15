@@ -20,12 +20,75 @@ class StripResult {
   });
 }
 
+/// A human-readable metadata field found in the original image, shown to
+/// the user before they decide whether to strip it.
+class MetadataField {
+  final String label;
+  final String value;
+
+  const MetadataField(this.label, this.value);
+}
+
+/// What's in an image's metadata, read without modifying it. Shown to the
+/// user before they choose to clean the image.
+class MetadataPreview {
+  final DateTime? dateTaken;
+  final List<MetadataField> fields;
+  final int totalFieldCount;
+  final bool hasGpsData;
+
+  const MetadataPreview({
+    required this.dateTaken,
+    required this.fields,
+    required this.totalFieldCount,
+    required this.hasGpsData,
+  });
+
+  bool get hasAnyMetadata => totalFieldCount > 0;
+}
+
 /// Strips all EXIF/IPTC/XMP metadata from an image, keeping only the
 /// original capture date/time (re-written as a fresh, minimal EXIF block).
 /// Everything else — GPS location, camera make/model/serial, software,
 /// thumbnails, comments — is dropped because we build a brand-new EXIF
 /// block instead of editing the original one.
 class MetadataStripper {
+  /// Reads what metadata an image has, without modifying it.
+  static MetadataPreview preview(Uint8List inputBytes) {
+    final decoded = img.decodeImage(inputBytes);
+    if (decoded == null) {
+      throw const FormatException('Could not decode image');
+    }
+
+    final dateTaken = _extractDateTaken(decoded);
+    final hasGpsData = decoded.hasExif && !decoded.exif.gpsIfd.isEmpty;
+    final totalFieldCount = _countFields(decoded);
+
+    final fields = <MetadataField>[];
+    if (decoded.hasExif) {
+      void addIfPresent(String label, String? value) {
+        if (value == null || value.trim().isEmpty) return;
+        fields.add(MetadataField(label, value.trim()));
+      }
+
+      addIfPresent('Camera make', decoded.exif.imageIfd.make);
+      addIfPresent('Camera model', decoded.exif.imageIfd.model);
+      addIfPresent('Software', decoded.exif.imageIfd.software);
+      addIfPresent('Artist', decoded.exif.imageIfd['Artist']?.toString());
+      addIfPresent('Copyright', decoded.exif.imageIfd.copyright);
+      if (hasGpsData) {
+        fields.add(const MetadataField('GPS location', 'Present'));
+      }
+    }
+
+    return MetadataPreview(
+      dateTaken: dateTaken,
+      fields: fields,
+      totalFieldCount: totalFieldCount,
+      hasGpsData: hasGpsData,
+    );
+  }
+
   static StripResult strip(Uint8List inputBytes) {
     final decoded = img.decodeImage(inputBytes);
     if (decoded == null) {

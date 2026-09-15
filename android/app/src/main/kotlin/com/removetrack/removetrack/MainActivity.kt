@@ -11,11 +11,15 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "removetrack/picker"
+    private var methodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        methodChannel = channel
+
+        channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getLaunchAction" -> result.success(intent?.action)
                 "returnPickedImage" -> {
@@ -55,5 +59,10 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // If this app was already running (e.g. in the background) and gets
+        // chosen again from another app's picker request, Android delivers
+        // that here rather than a fresh launch. Tell Dart so it can switch
+        // into picker mode instead of showing whatever screen was already up.
+        methodChannel?.invokeMethod("onNewIntent", intent.action)
     }
 }

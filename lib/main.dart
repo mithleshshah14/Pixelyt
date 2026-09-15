@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
@@ -34,21 +36,48 @@ class _LaunchRouter extends StatefulWidget {
 }
 
 class _LaunchRouterState extends State<_LaunchRouter> {
-  late final Future<String?> _launchAction = PickerChannel.getLaunchAction();
+  bool _loading = true;
+  String? _action;
+  StreamSubscription<String?>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final action = await PickerChannel.getLaunchAction();
+    if (!mounted) return;
+    setState(() {
+      _action = action;
+      _loading = false;
+    });
+    // Covers the case where Pixelyt is already running (e.g. in the
+    // background) and gets chosen again from another app's picker request:
+    // Android delivers that as onNewIntent, not a fresh launch, so this
+    // stream is what makes the app switch into picker mode for it.
+    _subscription = PickerChannel.onLaunchAction.listen((action) {
+      if (!mounted) return;
+      setState(() => _action = action);
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _launchAction,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        final action = snapshot.data;
-        final isPickerLaunch = action == PickerChannel.actionGetContent ||
-            action == PickerChannel.actionPick;
-        return isPickerLaunch ? const PickerScreen() : const HomeScreen();
-      },
-    );
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final isPickerLaunch = _action == PickerChannel.actionGetContent ||
+        _action == PickerChannel.actionPick;
+    return isPickerLaunch
+        ? const PickerScreen(key: ValueKey('picker'))
+        : const HomeScreen(key: ValueKey('home'));
   }
 }

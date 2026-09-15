@@ -4,6 +4,10 @@
 *.pyc
 *.swp
 .DS_Store
+
+# Personal test photos (real camera EXIF incl. GPS) - never commit
+/IMG_*.JPG
+/IMG_*.jpg
 .atom/
 .build/
 .buildlog/
