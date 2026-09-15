@@ -53,6 +53,34 @@ class MetadataPreview {
 /// thumbnails, comments — is dropped because we build a brand-new EXIF
 /// block instead of editing the original one.
 class MetadataStripper {
+  /// Reads every metadata tag found in the image, without modifying it —
+  /// unlike [preview]'s curated highlights, this is the full raw list.
+  static List<MetadataField> readAllFields(Uint8List inputBytes) {
+    final decoded = img.decodeImage(inputBytes);
+    if (decoded == null) {
+      throw const FormatException('Could not decode image');
+    }
+    if (!decoded.hasExif) return [];
+
+    final exif = decoded.exif;
+    final fields = <MetadataField>[];
+    for (final directory in exif.directories.values) {
+      for (final tag in directory.keys) {
+        final value = directory[tag]?.toString().trim() ?? '';
+        if (value.isEmpty) continue;
+        fields.add(MetadataField(exif.getTagName(tag), value));
+      }
+      for (final sub in directory.sub.values) {
+        for (final tag in sub.keys) {
+          final value = sub[tag]?.toString().trim() ?? '';
+          if (value.isEmpty) continue;
+          fields.add(MetadataField(exif.getTagName(tag), value));
+        }
+      }
+    }
+    return fields;
+  }
+
   /// Reads what metadata an image has, without modifying it.
   static MetadataPreview preview(Uint8List inputBytes) {
     final decoded = img.decodeImage(inputBytes);
@@ -61,7 +89,7 @@ class MetadataStripper {
     }
 
     final dateTaken = _extractDateTaken(decoded);
-    final hasGpsData = decoded.hasExif && !decoded.exif.gpsIfd.isEmpty;
+    final hasGpsData = _hasGpsCoordinates(decoded);
     final totalFieldCount = _countFields(decoded);
 
     final fields = <MetadataField>[];
@@ -77,7 +105,7 @@ class MetadataStripper {
       addIfPresent('Artist', decoded.exif.imageIfd['Artist']?.toString());
       addIfPresent('Copyright', decoded.exif.imageIfd.copyright);
       if (hasGpsData) {
-        fields.add(const MetadataField('GPS location', 'Present'));
+        addIfPresent('GPS location', _formatGpsCoordinate(decoded.exif.gpsIfd));
       }
     }
 
@@ -97,7 +125,7 @@ class MetadataStripper {
 
     final dateTaken = _extractDateTaken(decoded);
     final removedFieldCount = _countFields(decoded);
-    final hadGpsData = decoded.hasExif && !decoded.exif.gpsIfd.isEmpty;
+    final hadGpsData = _hasGpsCoordinates(decoded);
 
     // Orientation lives in EXIF; since we're about to wipe EXIF, bake the
     // rotation into the pixels first so the cleaned image still displays
@@ -123,6 +151,36 @@ class MetadataStripper {
       removedFieldCount: removedFieldCount,
       hadGpsData: hadGpsData,
     );
+  }
+
+  /// True only if the image actually has a GPS coordinate (latitude AND
+  /// longitude) — not just a non-empty GPS block, which some cameras write
+  /// (e.g. a GPSVersionID stub) even when no location fix was recorded.
+  static bool _hasGpsCoordinates(img.Image image) {
+    if (!image.hasExif) return false;
+    final gps = image.exif.gpsIfd;
+    return gps.hasGPSLatitude && gps.hasGPSLongitude;
+  }
+
+  /// Converts the degrees/minutes/seconds GPS tags into a human-readable
+  /// decimal coordinate, e.g. "37.4220° N, 122.0841° W".
+  static String? _formatGpsCoordinate(img.IfdDirectory gpsIfd) {
+    final lat = _dmsToDecimal(gpsIfd['GPSLatitude']);
+    final lon = _dmsToDecimal(gpsIfd['GPSLongitude']);
+    if (lat == null || lon == null) return null;
+    final latRef = gpsIfd['GPSLatitudeRef']?.toString().trim().toUpperCase();
+    final lonRef = gpsIfd['GPSLongitudeRef']?.toString().trim().toUpperCase();
+    final latDeg = lat.toStringAsFixed(4);
+    final lonDeg = lon.toStringAsFixed(4);
+    return '$latDeg° ${latRef ?? ''}, $lonDeg° ${lonRef ?? ''}'.trim();
+  }
+
+  static double? _dmsToDecimal(img.IfdValue? value) {
+    if (value == null || value.length < 3) return null;
+    final degrees = value.toDouble(0);
+    final minutes = value.toDouble(1);
+    final seconds = value.toDouble(2);
+    return degrees + (minutes / 60) + (seconds / 3600);
   }
 
   static int _countFields(img.Image image) {

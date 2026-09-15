@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'screens/home_screen.dart';
 import 'screens/picker_screen.dart';
+import 'screens/root_screen.dart';
 import 'services/picker_channel.dart';
 
 void main() {
@@ -78,6 +78,6 @@ class _LaunchRouterState extends State<_LaunchRouter> {
         _action == PickerChannel.actionPick;
     return isPickerLaunch
         ? const PickerScreen(key: ValueKey('picker'))
-        : const HomeScreen(key: ValueKey('home'));
+        : const RootScreen(key: ValueKey('home'));
   }
 }
